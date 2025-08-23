@@ -49,10 +49,11 @@ chrome.runtime.onMessage.addListener(
     const handleAsyncMessage = async () => {
       try {
         if (message.action === "CHECK_PRS") {
-          await checkAndLogMergedPRs();
+          const { count } = await checkAndLogMergedPRs();
           const response: ExtensionResponse = {
             success: true,
             message: "PR check completed",
+            data: { count },
           };
           sendResponse(response);
           return;
@@ -108,7 +109,7 @@ chrome.runtime.onMessage.addListener(
 /**
  * Main function to check for merged PRs and log them to Confluence
  */
-async function checkAndLogMergedPRs(): Promise<void> {
+async function checkAndLogMergedPRs(): Promise<{ count: number }> {
   try {
     // Get settings from storage
     const result = await chrome.storage.sync.get([
@@ -150,7 +151,7 @@ async function checkAndLogMergedPRs(): Promise<void> {
         "No new merged pull requests found.",
         "basic"
       );
-      return;
+      return { count: 0 };
     }
 
     console.log(`Found ${mergedPRs.length} new merged PRs`);
@@ -192,6 +193,7 @@ async function checkAndLogMergedPRs(): Promise<void> {
     );
 
     console.log("Successfully logged PRs to Confluence");
+    return { count: mergedPRs.length };
   } catch (error) {
     console.error("Error checking PRs:", error);
 
@@ -202,6 +204,7 @@ async function checkAndLogMergedPRs(): Promise<void> {
       }`,
       "basic"
     );
+    return { count: 0 };
   }
 }
 

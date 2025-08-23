@@ -35,7 +35,7 @@ const Popup: React.FC = () => {
           setState(prev => ({
             ...prev,
             status: 'success',
-            message: `Found ${response.count || 0} new PRs`,
+            message: `Found ${response.data.count || 0} new PRs`,
             lastCheck: new Date().toLocaleString()
           }));
           
