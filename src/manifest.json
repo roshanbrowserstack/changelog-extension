@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub to Confluence Changelog",
+  "version": "1.0.0",
+  "description": "Monitor GitHub repository for merged PRs and log them to Confluence",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "GitHub to Confluence Changelog"
+  },
+  "options_page": "src/options/index.html",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://api.github.com/*",
+    "https://*.atlassian.net/wiki/rest/api/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.jpeg",
+    "32": "icons/icon32.jpeg",
+    "48": "icons/icon48.jpeg",
+    "128": "icons/icon128.jpeg"
+  }
+}
