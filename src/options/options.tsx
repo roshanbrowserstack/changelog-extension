@@ -40,9 +40,12 @@ const OptionsPage: React.FC = () => {
       'confluenceUrl',
       'confluenceEmail',
       'confluenceToken',
-      'pageId'
+      'pageId',
     ], (result) => {
-      setSettings(prev => ({ ...prev, ...result }));
+      setSettings(prev => ({ 
+        ...prev, 
+        ...result
+      }));
     });
   }, []);
 
@@ -141,7 +144,15 @@ const OptionsPage: React.FC = () => {
     }
   };
 
-  const isValid = Object.values(settings).every((value: string) => value.trim() !== '');
+  const isValid = [
+    settings.githubToken,
+    settings.repoOwner,
+    settings.repoName,
+    settings.confluenceUrl,
+    settings.confluenceEmail,
+    settings.confluenceToken,
+    settings.pageId
+  ].every((value: string) => value.trim() !== '');
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-background min-h-screen">

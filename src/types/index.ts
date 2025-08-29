@@ -81,6 +81,18 @@ export interface ConfluenceUpdatePage {
   };
 }
 
+// Changelog Entry Types
+export interface ChangelogEntry {
+  type: string;
+  version: string;
+  pr: string;
+  developer: string;
+  changeLog: string;
+  status: string;
+  releaseDate: string;
+  artifactLink: string;
+}
+
 // Extension Settings Types
 export interface ExtensionSettings {
   githubToken: string;
