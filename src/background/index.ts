@@ -146,11 +146,6 @@ async function checkAndLogMergedPRs(): Promise<{ count: number }> {
 
     if (mergedPRs.length === 0) {
       console.log("No new merged PRs found");
-      await showNotification(
-        "No New PRs",
-        "No new merged pull requests found.",
-        "basic"
-      );
       return { count: 0 };
     }
 
@@ -184,13 +179,6 @@ async function checkAndLogMergedPRs(): Promise<{ count: number }> {
     await chrome.storage.sync.set({
       [LAST_CHECKED_KEY]: latestMergeTime.toISOString(),
     });
-
-    // Show success notification
-    await showNotification(
-      "Success",
-      `Logged ${mergedPRs.length} new PR(s) to Confluence`,
-      "basic"
-    );
 
     console.log("Successfully logged PRs to Confluence");
     return { count: mergedPRs.length };
@@ -411,22 +399,4 @@ async function testConfluenceConnection(
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
-}
-async function showNotification(
-  title: string,
-  message: string,
-  type: "basic" | "image" | "list" | "progress" = "basic"
-): Promise<void> {
-  // Create notification with minimal requirements to avoid image loading issues
-  const iconPath = "icons/icon48.jpeg";
-  const fullIconUrl = chrome.runtime.getURL(iconPath);
-
-  const notificationOptions = {
-    type: type,
-    title: title,
-    message: message,
-    iconUrl: fullIconUrl,
-  };
-
-  await chrome.notifications.create(notificationOptions);
 }
