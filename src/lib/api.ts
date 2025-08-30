@@ -233,18 +233,29 @@ function parseTableDate(dateString: string): Date | null {
 function getLatestEntryFromTable(content: string): {
   version: string;
   releaseDate: string;
+  entries: {
+    version: string;
+    releaseDate: string;
+    rawDate: Date;
+    prNumber?: number;
+  }[];
 } {
   // Find the table content
   const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/i;
   const tableMatch = content.match(tableRegex);
 
-  if (!tableMatch) return { version: "", releaseDate: "" };
+  if (!tableMatch) return { version: "", releaseDate: "", entries: [] };
 
   const tableContent = tableMatch[1];
 
   // Extract all rows with their version and release date
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const entries: { version: string; releaseDate: string; rawDate: Date }[] = [];
+  const entries: {
+    version: string;
+    releaseDate: string;
+    rawDate: Date;
+    prNumber?: number;
+  }[] = [];
 
   let rowMatch;
   while ((rowMatch = rowRegex.exec(tableContent)) !== null) {
@@ -263,10 +274,18 @@ function getLatestEntryFromTable(content: string): {
     }
 
     // Based on table structure: Type, Version, PR, Developer, Change Log, Status, Release Date, Artifact Link
-    // Version is in index 1, Release Date is in index 6
+    // Version is in index 1, PR is in index 2, Release Date is in index 6
     if (cells.length > 6 && cells[1] && cells[6]) {
       const version = cells[1];
       const releaseDate = cells[6];
+      const prCell = cells[2]; // Contains PR link like "#123"
+
+      // Extract PR number from the PR cell (e.g., "#123" -> 123)
+      let prNumber: number | undefined;
+      const prMatch = prCell.match(/#(\d+)/);
+      if (prMatch) {
+        prNumber = parseInt(prMatch[1]);
+      }
 
       // Parse the release date using our helper function
       const parsedDate = parseTableDate(releaseDate);
@@ -277,12 +296,14 @@ function getLatestEntryFromTable(content: string): {
           version,
           releaseDate,
           rawDate: parsedDate,
+          prNumber,
         });
       }
     }
   }
 
-  if (entries.length === 0) return { version: "", releaseDate: "" };
+  if (entries.length === 0)
+    return { version: "", releaseDate: "", entries: [] };
 
   // Sort by release date (most recent first) and then by version if dates are the same
   entries.sort((a, b) => {
@@ -304,6 +325,7 @@ function getLatestEntryFromTable(content: string): {
   return {
     version: entries[0].version,
     releaseDate: entries[0].releaseDate,
+    entries: entries,
   };
 }
 
@@ -394,7 +416,19 @@ export function appendPRsToContent(
     if (!latestEntry.releaseDate) return true; // No entries in table yet
 
     const latestEntryDate = new Date(latestEntry.releaseDate);
-    return prReleaseDate > latestEntryDate;
+
+    // Only proceed if PR release date is newer than latest entry
+    if (prReleaseDate > latestEntryDate) {
+      // Iterate over latestEntry.entries and check if PR is not present in any of them
+      const isPRAlreadyInTable = latestEntry.entries.some((entry) => {
+        // Check if this entry corresponds to the current PR by comparing PR numbers
+        return entry.prNumber === pr.number;
+      });
+
+      return !isPRAlreadyInTable;
+    }
+
+    return false;
   });
 
   if (newPRs.length === 0) return existingContent;

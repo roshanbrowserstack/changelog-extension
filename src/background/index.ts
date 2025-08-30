@@ -194,17 +194,9 @@ async function checkAndLogMergedPRs(): Promise<{ count: number }> {
 
     console.log("Successfully logged PRs to Confluence");
     return { count: mergedPRs.length };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error checking PRs:", error);
-
-    await showNotification(
-      "Error",
-      `Failed to check PRs: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`,
-      "basic"
-    );
-    return { count: 0 };
+    throw new Error(error.message || "Failed to check PRs");
   }
 }
 
