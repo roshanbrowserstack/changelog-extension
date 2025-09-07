@@ -116,6 +116,7 @@ async function checkAndLogMergedPRs(): Promise<{ count: number }> {
       "githubToken",
       "repoOwner",
       "repoName",
+      "branchName",
       "confluenceUrl",
       "confluenceEmail",
       "confluenceToken",
@@ -127,6 +128,7 @@ async function checkAndLogMergedPRs(): Promise<{ count: number }> {
       githubToken: result.githubToken || "",
       repoOwner: result.repoOwner || "",
       repoName: result.repoName || "",
+      branchName: result.branchName || "",
       confluenceUrl: result.confluenceUrl || "",
       confluenceEmail: result.confluenceEmail || "",
       confluenceToken: result.confluenceToken || "",
@@ -195,6 +197,7 @@ function isSettingsComplete(settings: ExtensionSettings): boolean {
   return !!(
     settings.repoOwner &&
     settings.repoName &&
+    settings.branchName &&
     settings.githubToken &&
     settings.confluenceUrl &&
     settings.pageId &&
@@ -245,21 +248,60 @@ async function testGitHubConnection(
     const owner = settings.repoOwner.trim();
     const repo = settings.repoName.trim();
     const token = settings.githubToken.trim();
+    const branch = settings.branchName.trim();
 
-    if (!owner || !repo || !token) {
+    if (!owner || !repo || !token || !branch) {
       return {
         success: false,
-        message: "Repository owner, name, and GitHub token are required",
+        message:
+          "Repository owner, name, branch, and GitHub token are required",
       };
     }
 
-    console.log(`Testing GitHub connection for ${owner}/${repo}`);
+    console.log(
+      `Testing GitHub connection for ${owner}/${repo} on branch ${branch}`
+    );
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    const response = await fetch(
+    // First, test repository access
+    const repoResponse = await fetch(
       `https://api.github.com/repos/${owner}/${repo}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "GitHub-Confluence-Extension/1.0",
+        },
+        signal: controller.signal,
+      }
+    );
+
+    if (!repoResponse.ok) {
+      clearTimeout(timeoutId);
+      let errorMessage = `GitHub API error: ${repoResponse.status} ${repoResponse.statusText}`;
+
+      if (repoResponse.status === 401) {
+        errorMessage = "GitHub token is invalid or expired";
+      } else if (repoResponse.status === 404) {
+        errorMessage = `Repository ${owner}/${repo} not found or no access`;
+      } else if (repoResponse.status === 403) {
+        errorMessage =
+          "GitHub API rate limit exceeded or insufficient permissions";
+      }
+
+      return {
+        success: false,
+        message: errorMessage,
+      };
+    }
+
+    const repoData = await repoResponse.json();
+
+    // Second, test if the specified branch exists
+    const branchResponse = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/branches/${branch}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -272,30 +314,27 @@ async function testGitHubConnection(
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      let errorMessage = `GitHub API error: ${response.status} ${response.statusText}`;
-
-      if (response.status === 401) {
-        errorMessage = "GitHub token is invalid or expired";
-      } else if (response.status === 404) {
-        errorMessage = `Repository ${owner}/${repo} not found or no access`;
-      } else if (response.status === 403) {
-        errorMessage =
-          "GitHub API rate limit exceeded or insufficient permissions";
+    if (!branchResponse.ok) {
+      if (branchResponse.status === 404) {
+        return {
+          success: false,
+          message: `Branch '${branch}' not found in repository ${owner}/${repo}`,
+        };
+      } else {
+        return {
+          success: false,
+          message: `Failed to verify branch '${branch}': ${branchResponse.status} ${branchResponse.statusText}`,
+        };
       }
-
-      return {
-        success: false,
-        message: errorMessage,
-      };
     }
 
-    const repoData = await response.json();
-    console.log(`GitHub connection successful for ${repoData.full_name}`);
+    console.log(
+      `GitHub connection successful for ${repoData.full_name} on branch ${branch}`
+    );
 
     return {
       success: true,
-      message: `GitHub connection successful for ${repoData.full_name}`,
+      message: `GitHub connection successful for ${repoData.full_name} on branch '${branch}'`,
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {

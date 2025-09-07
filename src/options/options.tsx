@@ -9,6 +9,7 @@ interface Settings {
   githubToken: string;
   repoOwner: string;
   repoName: string;
+  branchName: string;
   confluenceUrl: string;
   confluenceEmail: string;
   confluenceToken: string;
@@ -22,6 +23,7 @@ const OptionsPage: React.FC = () => {
     githubToken: '',
     repoOwner: '',
     repoName: '',
+    branchName: '',
     confluenceUrl: '',
     confluenceEmail: '',
     confluenceToken: '',
@@ -37,6 +39,7 @@ const OptionsPage: React.FC = () => {
       'githubToken',
       'repoOwner', 
       'repoName',
+      'branchName',
       'confluenceUrl',
       'confluenceEmail',
       'confluenceToken',
@@ -148,6 +151,7 @@ const OptionsPage: React.FC = () => {
     settings.githubToken,
     settings.repoOwner,
     settings.repoName,
+    settings.branchName,
     settings.confluenceUrl,
     settings.confluenceEmail,
     settings.confluenceToken,
@@ -215,6 +219,21 @@ const OptionsPage: React.FC = () => {
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Branch Name *
+              </label>
+              <Input
+                value={settings.branchName}
+                onChange={handleInputChange('branchName')}
+                placeholder="main, master, develop, etc."
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                The branch to monitor for merged pull requests (e.g., main, master, develop)
+              </p>
             </div>
           </div>
 

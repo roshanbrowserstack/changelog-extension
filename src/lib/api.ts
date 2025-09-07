@@ -7,7 +7,7 @@ import type {
 } from "@/types";
 
 /**
- * Fetch merged pull requests from GitHub repository since a given timestamp
+ * Fetch merged pull requests from GitHub repository that were merged into the specified branch
  */
 export async function fetchMergedPRs(
   settings: ExtensionSettings
@@ -41,8 +41,15 @@ export async function fetchMergedPRs(
 
   const pullRequests: GitHubPullRequest[] = await response.json();
 
-  // Filter for merged PRs only
-  let mergedPRs = pullRequests.filter((pr) => pr.merged_at);
+  // Filter for merged PRs only that were merged into the specified branch
+  let mergedPRs = pullRequests.filter((pr) => {
+    // Check if PR is merged and if it was merged into the specified branch
+    return pr.merged_at && pr.base.ref === settings.branchName;
+  });
+
+  console.log(
+    `Found ${pullRequests.length} closed PRs, ${mergedPRs.length} merged into branch '${settings.branchName}'`
+  );
 
   return mergedPRs;
 }

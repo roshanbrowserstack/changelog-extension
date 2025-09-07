@@ -98,6 +98,7 @@ export interface ExtensionSettings {
   githubToken: string;
   repoOwner: string;
   repoName: string;
+  branchName: string;
   confluenceUrl: string;
   confluenceEmail: string;
   confluenceToken: string;
