@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:watch": "./dev-watch.sh",
+    "dev:build": "tsc && vite build --mode development --sourcemap",
     "build": "tsc && vite build",
     "build:extension": "./build-extension.sh",
     "preview": "vite preview",
@@ -24,9 +25,11 @@
   "dependencies": {
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "date-fns": "^4.1.0",
     "lucide-react": "^0.263.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "semver": "^7.7.2",
     "tailwind-merge": "^1.14.0"
   },
   "devDependencies": {
@@ -34,6 +37,7 @@
     "@types/node": "^20.5.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
+    "@types/semver": "^7.7.1",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "autoprefixer": "^10.4.15",

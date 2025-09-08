@@ -15,6 +15,7 @@ export interface GitHubPullRequest {
   state: "open" | "closed";
   merged: boolean;
   merged_at: string | null;
+  merged_by: GitHubUser | null;
   merge_commit_sha: string | null;
   user: GitHubUser;
   created_at: string;

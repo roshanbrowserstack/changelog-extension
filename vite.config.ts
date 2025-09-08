@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   build: {
+    sourcemap: mode === "development" ? "inline" : false,
+    minify: mode === "development" ? false : "esbuild",
     rollupOptions: {
       input: {
         popup: resolve(__dirname, "src/popup/index.html"),
@@ -30,4 +32,7 @@ export default defineConfig({
   define: {
     global: "globalThis",
   },
-});
+  esbuild: {
+    sourcemap: mode === "development",
+  },
+}));

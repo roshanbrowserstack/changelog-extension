@@ -23,8 +23,8 @@ copy_static_files() {
 copy_static_files
 
 # Start vite build in watch mode in background
-echo "🔨 Starting Vite build in watch mode..."
-pnpm vite build --watch --mode development &
+echo "🔨 Starting Vite build in watch mode with sourcemaps..."
+pnpm vite build --watch --mode development --sourcemap &
 VITE_PID=$!
 
 # Watch for changes to manifest.json and icons

@@ -5,6 +5,8 @@ import type {
   ConfluenceUpdatePage,
   ExtensionSettings,
 } from "@/types";
+import { parse, isValid, compareDesc } from "date-fns";
+import { compare, coerce } from "semver";
 
 /**
  * Fetch merged pull requests from GitHub repository that were merged into the specified branch
@@ -142,9 +144,135 @@ export async function updateConfluencePage(
 }
 
 /**
- * Extract version from PR title or body
+ * Extract version from package.json file at the specific commit SHA and fetch complete PR details
+ * This function fetches both the package.json file and the complete PR details (including merged_by)
+ * to minimize network calls. Returns both the version and the updated PR object.
  */
-function extractVersionFromPR(pr: GitHubPullRequest): string {
+async function extractVersionAndPRDetails(
+  pr: GitHubPullRequest,
+  settings: ExtensionSettings
+): Promise<{ version: string; detailedPR: GitHubPullRequest }> {
+  let detailedPR = pr;
+
+  // First, fetch complete PR details to get merged_by information
+  try {
+    const owner = settings.repoOwner;
+    const repo = settings.repoName;
+    const detailUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${pr.number}`;
+
+    const detailResponse = await fetch(detailUrl, {
+      headers: {
+        Authorization: `token ${settings.githubToken}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "GitHub-Confluence-Extension",
+      },
+    });
+
+    if (detailResponse.ok) {
+      detailedPR = await detailResponse.json();
+    } else {
+      console.warn(
+        `Failed to fetch details for PR #${pr.number}, using list data`
+      );
+    }
+  } catch (error) {
+    console.warn(`Error fetching details for PR #${pr.number}:`, error);
+  }
+
+  // Now extract version from package.json using the detailed PR data
+  try {
+    const owner = settings.repoOwner;
+    const repo = settings.repoName;
+    const sha = detailedPR.merge_commit_sha || detailedPR.head.sha;
+
+    if (!sha) {
+      console.log(
+        `No commit SHA available for PR #${pr.number}, falling back to title/body`
+      );
+      return { version: extractVersionFromPRText(detailedPR), detailedPR };
+    }
+
+    // Fetch package.json content from the specific commit
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/package.json?ref=${sha}`;
+
+    console.log(`Fetching package.json for PR #${pr.number} from ${url}`);
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `token ${settings.githubToken}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "GitHub-Confluence-Extension",
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(
+          `package.json not found for PR #${pr.number} at commit ${sha}, falling back to title/body`
+        );
+        return { version: extractVersionFromPRText(detailedPR), detailedPR };
+      }
+      throw new Error(
+        `GitHub API error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const fileData = await response.json();
+
+    // Decode base64 content
+    if (!fileData.content) {
+      console.log(
+        `No content field in package.json response for PR #${pr.number}`
+      );
+      return { version: extractVersionFromPRText(detailedPR), detailedPR };
+    }
+
+    let content;
+    try {
+      content = atob(fileData.content.replace(/\s/g, "")); // Remove whitespace from base64
+    } catch (decodeError) {
+      console.log(
+        `Failed to decode base64 content for PR #${pr.number}:`,
+        decodeError
+      );
+      return { version: extractVersionFromPRText(detailedPR), detailedPR };
+    }
+
+    let packageJson;
+    try {
+      packageJson = JSON.parse(content);
+    } catch (parseError) {
+      console.log(
+        `Failed to parse package.json content for PR #${pr.number}:`,
+        parseError
+      );
+      return { version: extractVersionFromPRText(detailedPR), detailedPR };
+    }
+
+    if (packageJson.version) {
+      console.log(
+        `Extracted version ${packageJson.version} from package.json for PR #${pr.number}`
+      );
+      return { version: packageJson.version, detailedPR };
+    } else {
+      console.log(
+        `No version field in package.json for PR #${pr.number}, falling back to title/body`
+      );
+      return { version: extractVersionFromPRText(detailedPR), detailedPR };
+    }
+  } catch (error) {
+    console.log(
+      `Error extracting version from package.json for PR #${pr.number}:`,
+      error
+    );
+    return { version: extractVersionFromPRText(detailedPR), detailedPR };
+  }
+}
+
+/**
+ * Extract version from PR title or body (fallback method)
+ */
+function extractVersionFromPRText(pr: GitHubPullRequest): string {
   // Common version patterns: v1.2.3, version 1.2.3, 1.2.3, etc.
   const versionRegex =
     /(?:v|version\s*)?(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9-]+)?)/i;
@@ -168,6 +296,18 @@ function extractVersionFromPR(pr: GitHubPullRequest): string {
 }
 
 /**
+ * Extract version from PR by checking package.json first, then falling back to title/body
+ * Also returns the detailed PR object with merged_by information
+ */
+async function extractVersionFromPR(
+  pr: GitHubPullRequest,
+  settings: ExtensionSettings
+): Promise<string> {
+  const result = await extractVersionAndPRDetails(pr, settings);
+  return result.version;
+}
+
+/**
  * Extract changelog information from PR body
  */
 function extractChangelogFromPR(pr: GitHubPullRequest): string {
@@ -188,50 +328,125 @@ function extractChangelogFromPR(pr: GitHubPullRequest): string {
 }
 
 /**
- * Parse date string in various formats commonly used in tables
+ * Parse date string in various formats commonly used in tables using date-fns
  */
 function parseTableDate(dateString: string): Date | null {
   if (!dateString) return null;
 
-  // Try parsing common date formats
-  const formats = [
-    // MM/DD/YYYY
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
-    // DD/MM/YYYY
-    /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/,
-    // YYYY-MM-DD
-    /^(\d{4})-(\d{1,2})-(\d{1,2})$/,
-    // DD-MM-YYYY
-    /^(\d{1,2})-(\d{1,2})-(\d{4})$/,
+  const cleanDate = dateString.trim();
+
+  // Common date formats to try
+  const dateFormats = [
+    "dd/MM/yyyy", // European format: 30/08/2025
+    "MM/dd/yyyy", // US format: 08/30/2025
+    "dd-MM-yyyy", // European dash format: 30-08-2025
+    "MM-dd-yyyy", // US dash format: 08-30-2025
+    "yyyy-MM-dd", // ISO format: 2025-08-30
+    "dd/MM/yy", // Short year: 30/08/25
+    "MM/dd/yy", // US short year: 08/30/25
   ];
 
-  // First try native Date parsing
-  let date = new Date(dateString);
-  if (!isNaN(date.getTime())) {
-    return date;
-  }
-
-  // If that fails, try manual parsing for common formats
-  for (const format of formats) {
-    const match = dateString.match(format);
-    if (match) {
-      // Assume MM/DD/YYYY format for ambiguous cases
-      const [, part1, part2, part3] = match;
-      if (part3.length === 4) {
-        // Year is last
-        date = new Date(parseInt(part3), parseInt(part1) - 1, parseInt(part2));
-      } else {
-        // Year is first (YYYY-MM-DD)
-        date = new Date(parseInt(part1), parseInt(part2) - 1, parseInt(part3));
+  // Try each format until one works
+  for (const dateFormat of dateFormats) {
+    try {
+      const parsedDate = parse(cleanDate, dateFormat, new Date());
+      if (isValid(parsedDate)) {
+        return parsedDate;
       }
-
-      if (!isNaN(date.getTime())) {
-        return date;
-      }
+    } catch (error) {
+      // Continue to next format
     }
   }
 
+  // Fallback to native Date parsing
+  try {
+    const fallbackDate = new Date(cleanDate);
+    if (isValid(fallbackDate)) {
+      return fallbackDate;
+    }
+  } catch (error) {
+    // Ignore error
+  }
+
   return null;
+}
+
+/**
+ * Compare two version strings semantically using semver
+ * Returns: negative if version1 < version2, positive if version1 > version2, 0 if equal
+ */
+function compareVersions(version1: string, version2: string): number {
+  if (!version1 && !version2) return 0;
+  if (!version1) return -1;
+  if (!version2) return 1;
+
+  // Try to coerce versions to valid semver format
+  const v1 = coerce(version1);
+  const v2 = coerce(version2);
+
+  // If both versions can be coerced, use semver comparison
+  if (v1 && v2) {
+    return compare(v1, v2);
+  }
+
+  // Fallback to string-based comparison for non-semver versions
+  const parts1 = version1.split(".").map((part) => {
+    const num = parseInt(part);
+    return isNaN(num) ? 0 : num;
+  });
+  const parts2 = version2.split(".").map((part) => {
+    const num = parseInt(part);
+    return isNaN(num) ? 0 : num;
+  });
+
+  const maxLength = Math.max(parts1.length, parts2.length);
+
+  for (let i = 0; i < maxLength; i++) {
+    const part1 = parts1[i] || 0;
+    const part2 = parts2[i] || 0;
+
+    if (part1 > part2) return 1;
+    if (part1 < part2) return -1;
+  }
+
+  return 0;
+}
+
+/**
+ * Extract clean version text from Confluence formatted content
+ */
+function extractVersionFromCell(cellContent: string): string {
+  // Handle h4 tags: <h4>2.3.1</h4>
+  const h4Match = cellContent.match(/<h4[^>]*>(.*?)<\/h4>/i);
+  if (h4Match) {
+    return h4Match[1].trim();
+  }
+
+  // Fallback: remove all HTML tags
+  return cellContent.replace(/<[^>]*>/g, "").trim();
+}
+
+/**
+ * Extract clean date text from Confluence formatted content
+ */
+function extractDateFromCell(cellContent: string): string {
+  // Handle time elements: <time datetime="2025-09-07" />
+  const timeMatch = cellContent.match(/<time\s+datetime="([^"]+)"\s*\/?>/i);
+  if (timeMatch) {
+    // Convert ISO date to DD/MM/YYYY format for parseTableDate
+    const isoDate = timeMatch[1];
+    const date = new Date(isoDate);
+    if (!isNaN(date.getTime())) {
+      return `${date.getDate().toString().padStart(2, "0")}/${(
+        date.getMonth() + 1
+      )
+        .toString()
+        .padStart(2, "0")}/${date.getFullYear()}`;
+    }
+  }
+
+  // Handle other date formats or fallback
+  return cellContent.replace(/<[^>]*>/g, "").trim();
 }
 
 /**
@@ -275,17 +490,23 @@ function getLatestEntryFromTable(content: string): {
     let cellMatch;
 
     while ((cellMatch = cellRegex.exec(row)) !== null) {
-      // Remove HTML tags and get text content
-      const cellContent = cellMatch[1].replace(/<[^>]*>/g, "").trim();
-      cells.push(cellContent);
+      // Get raw cell content first
+      const rawCellContent = cellMatch[1];
+      cells.push(rawCellContent);
     }
 
     // Based on table structure: Type, Version, PR, Developer, Change Log, Status, Release Date, Artifact Link
     // Version is in index 1, PR is in index 2, Release Date is in index 6
     if (cells.length > 6 && cells[1] && cells[6]) {
-      const version = cells[1];
-      const releaseDate = cells[6];
-      const prCell = cells[2]; // Contains PR link like "#123"
+      // Extract version using specialized parser
+      const version = extractVersionFromCell(cells[1]);
+
+      // Extract date using specialized parser
+      const rawReleaseDateContent = cells[6];
+      const releaseDate = extractDateFromCell(rawReleaseDateContent);
+
+      // Extract PR number from PR cell (remove HTML tags for this)
+      const prCell = cells[2].replace(/<[^>]*>/g, "").trim(); // Contains PR link like "#123"
 
       // Extract PR number from the PR cell (e.g., "#123" -> 123)
       let prNumber: number | undefined;
@@ -314,19 +535,12 @@ function getLatestEntryFromTable(content: string): {
 
   // Sort by release date (most recent first) and then by version if dates are the same
   entries.sort((a, b) => {
-    const dateComparison = b.rawDate.getTime() - a.rawDate.getTime();
+    // Use date-fns compareDesc for date comparison (desc = most recent first)
+    const dateComparison = compareDesc(a.rawDate, b.rawDate);
     if (dateComparison !== 0) return dateComparison;
 
-    // If dates are the same, compare versions
-    const partsA = a.version.split(".").map(Number);
-    const partsB = b.version.split(".").map(Number);
-
-    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-      const partA = partsA[i] || 0;
-      const partB = partsB[i] || 0;
-      if (partA !== partB) return partB - partA; // Descending order
-    }
-    return 0;
+    // If dates are the same, compare versions using semver
+    return compareVersions(b.version, a.version); // Descending order (newer first)
   });
 
   return {
@@ -341,32 +555,48 @@ function getLatestEntryFromTable(content: string): {
  */
 function isNewerVersion(version1: string, version2: string): boolean {
   if (!version1 || !version2) return true; // If either is missing, consider it new
-
-  const parts1 = version1.split(".").map(Number);
-  const parts2 = version2.split(".").map(Number);
-
-  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-    const part1 = parts1[i] || 0;
-    const part2 = parts2[i] || 0;
-
-    if (part1 > part2) return true;
-    if (part1 < part2) return false;
-  }
-
-  return false; // Same version
+  return compareVersions(version1, version2) > 0;
 }
 
 /**
  * Format PR data for the new Confluence table structure
  */
-export function formatPRForConfluence(pr: GitHubPullRequest): string {
-  const version = extractVersionFromPR(pr);
+export async function formatPRForConfluence(
+  pr: GitHubPullRequest,
+  settings: ExtensionSettings,
+  version?: string
+): Promise<string> {
+  const prVersion = version ?? (await extractVersionFromPR(pr, settings));
   const changelog = extractChangelogFromPR(pr);
-  const mergedDate = pr.merged_at
-    ? new Date(pr.merged_at).toLocaleDateString()
-    : new Date().toLocaleDateString();
+  const mergedDate = pr.merged_at ? new Date(pr.merged_at) : new Date();
 
-  const developer = pr.user.login;
+  // Format version as h4 heading in Confluence
+  const formattedVersion = prVersion ? `<h4>${prVersion}</h4>` : "";
+
+  // Format date using Confluence date macro (YYYY-MM-DD format)
+  const formattedDate = `<time datetime="${
+    mergedDate.toISOString().split("T")[0]
+  }" />`;
+
+  // Format status as orange status pill in Confluence
+  const statusPill = `<ac:structured-macro ac:name="status" ac:schema-version="1">
+    <ac:parameter ac:name="colour">Orange</ac:parameter>
+    <ac:parameter ac:name="title">Published</ac:parameter>
+  </ac:structured-macro>`;
+
+  // Show both PR author and person who merged it
+  let developer: string;
+  if (pr.merged_by?.login && pr.merged_by.login !== pr.user.login) {
+    // Different people: show both author and merger
+    developer = `${pr.user.login} (developer) / ${pr.merged_by.login} (QA/merged by)`;
+  } else if (pr.merged_by?.login) {
+    // Same person: show just the name with role
+    developer = `${pr.user.login} (developer & merged)`;
+  } else {
+    // No merger info: show just author
+    developer = `${pr.user.login} (developer)`;
+  }
+
   const prLink = `<a href="${pr.html_url}">#${pr.number}</a>`;
 
   // Try to extract artifact link from PR body (look for common patterns)
@@ -383,12 +613,12 @@ export function formatPRForConfluence(pr: GitHubPullRequest): string {
   return `
 <tr>
   <td>Minor</td>
-  <td>${version}</td>
+  <td>${formattedVersion}</td>
   <td>${prLink}</td>
   <td>${developer}</td>
   <td>${changelog}</td>
-  <td>Released</td>
-  <td>${mergedDate}</td>
+  <td>${statusPill}</td>
+  <td>${formattedDate}</td>
   <td>${artifactLink}</td>
 </tr>`;
 }
@@ -396,49 +626,83 @@ export function formatPRForConfluence(pr: GitHubPullRequest): string {
 /**
  * Append PRs to existing Confluence page content
  */
-export function appendPRsToContent(
+export async function appendPRsToContent(
   existingContent: string,
-  prs: GitHubPullRequest[]
-): string {
+  prs: GitHubPullRequest[],
+  settings: ExtensionSettings
+): Promise<string> {
   if (prs.length === 0) return existingContent;
 
   // Get the latest version and release date from the existing table
   const latestEntry = getLatestEntryFromTable(existingContent);
 
-  // Filter PRs to only include those with newer versions or no version info (but newer release date)
-  const newPRs = prs.filter((pr) => {
-    const prVersion = extractVersionFromPR(pr);
+  // First pass: Filter PRs by date and existing PR numbers to avoid unnecessary version extraction
+  const potentialNewPRs = prs.filter((pr) => {
     const prReleaseDate = pr.merged_at ? new Date(pr.merged_at) : new Date();
 
-    // If PR has version, check if it's newer
-    if (prVersion) {
-      // If table has no versions, include it
-      if (!latestEntry.version) return true;
+    // Check if PR is already in the table by PR number
+    const isPRAlreadyInTable = latestEntry.entries.some((entry) => {
+      return entry.prNumber === pr.number;
+    });
 
-      // Only include if PR version is newer
-      return isNewerVersion(prVersion, latestEntry.version);
+    if (isPRAlreadyInTable) {
+      return false; // Skip PRs that are already in the table
     }
 
-    // If PR has no version, include only if its release date is newer than latest entry
-    if (!latestEntry.releaseDate) return true; // No entries in table yet
+    // If no entries in table yet, include all PRs for version checking
+    if (!latestEntry.releaseDate) {
+      return true;
+    }
 
+    // Only include PRs with release date newer than latest entry
     const latestEntryDate = new Date(latestEntry.releaseDate);
-
-    // Only proceed if PR release date is newer than latest entry
-    if (prReleaseDate > latestEntryDate) {
-      // Iterate over latestEntry.entries and check if PR is not present in any of them
-      const isPRAlreadyInTable = latestEntry.entries.some((entry) => {
-        // Check if this entry corresponds to the current PR by comparing PR numbers
-        return entry.prNumber === pr.number;
-      });
-
-      return !isPRAlreadyInTable;
-    }
-
-    return false;
+    return prReleaseDate > latestEntryDate;
   });
 
-  if (newPRs.length === 0) return existingContent;
+  if (potentialNewPRs.length === 0) return existingContent;
+
+  console.log(
+    `Filtering ${potentialNewPRs.length} potential new PRs by version...`
+  );
+
+  // Second pass: Extract versions only for filtered PRs and apply version-based filtering
+  // Also get detailed PR information (including merged_by) in the same call
+  const newPRsWithDetails: { pr: GitHubPullRequest; version: string }[] = [];
+  for (const pr of potentialNewPRs) {
+    const { version: prVersion, detailedPR } = await extractVersionAndPRDetails(
+      pr,
+      settings
+    );
+
+    // If PR has version, check if it's newer than latest table version
+    if (prVersion) {
+      // If table has no versions, include it
+      if (!latestEntry.version) {
+        newPRsWithDetails.push({ pr: detailedPR, version: prVersion });
+        continue;
+      }
+
+      // Only include if PR version is newer
+      if (isNewerVersion(prVersion, latestEntry.version)) {
+        newPRsWithDetails.push({ pr: detailedPR, version: prVersion });
+        continue;
+      } else {
+        console.log(
+          `Skipping PR #${pr.number} - version ${prVersion} is not newer than ${latestEntry.version}`
+        );
+      }
+    } else {
+      // If PR has no version but passed date filter, include it
+      newPRsWithDetails.push({ pr: detailedPR, version: prVersion });
+    }
+  }
+
+  if (newPRsWithDetails.length === 0) {
+    console.log("No new PRs to add after version filtering");
+    return existingContent;
+  }
+
+  console.log(`Adding ${newPRsWithDetails.length} new PRs to Confluence table`);
 
   // Check if changelog table exists
   const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/i;
@@ -446,7 +710,10 @@ export function appendPRsToContent(
 
   if (tableMatch) {
     // Table exists, append new rows before closing </table>
-    const prRows = newPRs.map((pr) => formatPRForConfluence(pr)).join("\n");
+    const prRowPromises = newPRsWithDetails.map(({ pr, version }) =>
+      formatPRForConfluence(pr, settings, version)
+    );
+    const prRows = (await Promise.all(prRowPromises)).join("\n");
     return existingContent.replace(/<\/table>/i, `${prRows}\n</table>`);
   } else {
     // No table exists, create a new one with the proper headers
@@ -464,7 +731,10 @@ export function appendPRsToContent(
     <th>Artifact Link</th>
   </tr>`;
 
-    const prRows = newPRs.map((pr) => formatPRForConfluence(pr)).join("\n");
+    const prRowPromises = newPRsWithDetails.map(({ pr, version }) =>
+      formatPRForConfluence(pr, settings, version)
+    );
+    const prRows = (await Promise.all(prRowPromises)).join("\n");
     const tableFooter = "</table>";
 
     const newTable = tableHeader + prRows + tableFooter;
@@ -554,6 +824,18 @@ export async function testPageAnalysis(
     console.log("- Table headers:", analysis.tableStructure);
     console.log("- Row count (excluding header):", analysis.rowCount);
 
+    // Test date parsing with sample dates
+    console.log("\nTesting date parsing...");
+    const testDates = ["30/08/2025", "23/08/2025", "07/09/2025", "03/09/2025"];
+    testDates.forEach((dateStr) => {
+      const parsed = parseTableDate(dateStr);
+      console.log(
+        `Date "${dateStr}" parsed to:`,
+        parsed?.toISOString(),
+        `(${parsed?.toLocaleDateString()})`
+      );
+    });
+
     // Test version extraction from sample PRs
     console.log("\nTesting version extraction from sample PR data...");
 
@@ -576,8 +858,12 @@ export async function testPageAnalysis(
       },
     ];
 
-    samplePRs.forEach((pr, index) => {
-      const version = extractVersionFromPR(pr as GitHubPullRequest);
+    for (let index = 0; index < samplePRs.length; index++) {
+      const pr = samplePRs[index];
+      const version = await extractVersionFromPR(
+        pr as GitHubPullRequest,
+        settings
+      );
       const changelog = extractChangelogFromPR(pr as GitHubPullRequest);
       const prReleaseDate = pr.merged_at ? new Date(pr.merged_at) : new Date();
 
@@ -603,7 +889,7 @@ export async function testPageAnalysis(
           isNewerByDate
         );
       }
-    });
+    }
   } catch (error) {
     console.error("Error testing page analysis:", error);
     throw error;

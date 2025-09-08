@@ -157,9 +157,10 @@ async function checkAndLogMergedPRs(): Promise<{ count: number }> {
     const confluencePage = await fetchConfluencePage(settings);
 
     // Append PR data to page content
-    const updatedContent = appendPRsToContent(
+    const updatedContent = await appendPRsToContent(
       confluencePage.body.storage.value,
-      mergedPRs
+      mergedPRs,
+      settings
     );
 
     // Update Confluence page
