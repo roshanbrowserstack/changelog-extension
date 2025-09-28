@@ -319,7 +319,15 @@ function extractChangelogFromPR(pr: GitHubPullRequest): string {
   const match = pr.body.match(changelogRegex);
 
   if (match) {
-    return match[1].trim();
+    let changelogText = match[1].trim();
+
+    // Remove artifact link section from changelog text
+    // This handles cases where "Artifact link:" appears in the changelog
+    changelogText = changelogText
+      .replace(/(?:\n)?artifact\s*link:[\s\S]*$/i, "")
+      .trim();
+
+    return changelogText;
   }
 
   // If no explicit changelog section, use the first line of description
@@ -571,16 +579,16 @@ export async function formatPRForConfluence(
   const mergedDate = pr.merged_at ? new Date(pr.merged_at) : new Date();
 
   // Format version as h4 heading in Confluence
-  const formattedVersion = prVersion ? `<h4>${prVersion}</h4>` : "";
+  const formattedVersion = prVersion ? `<h4>${prVersion}.0</h4>` : "";
 
   // Format date using Confluence date macro (YYYY-MM-DD format)
   const formattedDate = `<time datetime="${
     mergedDate.toISOString().split("T")[0]
   }" />`;
 
-  // Format status as orange status pill in Confluence
+  // Format status as green status pill in Confluence
   const statusPill = `<ac:structured-macro ac:name="status" ac:schema-version="1">
-    <ac:parameter ac:name="colour">Orange</ac:parameter>
+    <ac:parameter ac:name="colour">Green</ac:parameter>
     <ac:parameter ac:name="title">Published</ac:parameter>
   </ac:structured-macro>`;
 
@@ -602,11 +610,14 @@ export async function formatPRForConfluence(
   // Try to extract artifact link from PR body (look for common patterns)
   let artifactLink = "";
   if (pr.body) {
+    // Updated regex to handle multi-line artifact links
+    // Matches "Artifact link:" followed by optional whitespace/newlines, then captures the URL
     const artifactRegex =
-      /(?:artifact|build|release)\s*(?:link|url):\s*([^\s\n]+)/i;
+      /(?:artifact|build|release)\s*(?:link|url):\s*\n?\s*(https?:\/\/[^\s\n]+)/i;
     const match = pr.body.match(artifactRegex);
     if (match) {
-      artifactLink = `<a href="${match[1]}">${match[1]}</a>`;
+      const url = match[1].trim();
+      artifactLink = `<a href="${url}">${url}</a>`;
     }
   }
 
@@ -854,6 +865,14 @@ export async function testPageAnalysis(
         user: { login: "developer2" } as GitHubUser,
         number: 124,
         html_url: "https://github.com/test/repo/pull/124",
+        merged_at: new Date().toISOString(),
+      },
+      {
+        title: "Accessibility improvements",
+        body: "Changelog:\n\nThrottling fixes related to feedback, logs and status message.\nDisable preferred selection when the report is still in progress\nJaws Screenreader\nCheck WA report screen full rule hidden due wrong margin.\nArtifact link:\nhttps://browserstack.atlassian.net/jira/software/c/projects/A11Y/boards/614?assignee=712020%3A46e24ecd-dac5-4189-a086-eb3d82989351",
+        user: { login: "developer3" } as GitHubUser,
+        number: 125,
+        html_url: "https://github.com/test/repo/pull/125",
         merged_at: new Date().toISOString(),
       },
     ];
