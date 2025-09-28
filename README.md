@@ -111,6 +111,8 @@ src/
 
 - `pnpm run dev:watch` - Start development with auto-rebuild and file watching
 - `pnpm run build` - Build production version
+- `pnpm run build:extension` - Build extension for development (unpacked loading)
+- `pnpm run build:zip` - Build and package extension for Chrome Web Store upload
 - `pnpm run type-check` - Run TypeScript type checking
 
 ### Development Workflow
@@ -140,6 +142,43 @@ The development script will:
 - ✅ Copy manifest and icons to dist/
 - ✅ Watch for file changes
 - ✅ Show build status in terminal
+
+### Deployment
+
+#### Chrome Web Store Deployment
+
+To create a production-ready package for Chrome Web Store:
+
+1. **Build and Package**
+
+   ```bash
+   pnpm run build:zip
+   ```
+
+   This will:
+
+   - Build the extension in production mode
+   - Copy manifest and icons
+   - Remove development files and source maps
+   - Create `extension.zip` ready for upload
+
+2. **Upload to Chrome Web Store**
+
+   - Go to [Chrome Web Store Developer Console](https://chrome.google.com/webstore/devconsole/)
+   - Select your extension (or create a new one)
+   - Upload the `extension.zip` file
+   - Fill in the required store listing information
+   - Submit for review
+
+#### Development Installation
+
+For local development testing:
+
+```bash
+pnpm run build:extension
+```
+
+Then load the unpacked extension from the `dist/` directory in Chrome's developer mode.
 
 ### API Documentation
 

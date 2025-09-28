@@ -144,8 +144,8 @@ export async function updateConfluencePage(
 }
 
 /**
- * Extract version from package.json file at the specific commit SHA and fetch complete PR details
- * This function fetches both the package.json file and the complete PR details (including merged_by)
+ * Extract version from ba11y/package.json file at the specific commit SHA and fetch complete PR details
+ * This function fetches both the ba11y/package.json file and the complete PR details (including merged_by)
  * to minimize network calls. Returns both the version and the updated PR object.
  */
 async function extractVersionAndPRDetails(
@@ -179,7 +179,7 @@ async function extractVersionAndPRDetails(
     console.warn(`Error fetching details for PR #${pr.number}:`, error);
   }
 
-  // Now extract version from package.json using the detailed PR data
+  // Now extract version from ba11y/package.json using the detailed PR data
   try {
     const owner = settings.repoOwner;
     const repo = settings.repoName;
@@ -192,10 +192,10 @@ async function extractVersionAndPRDetails(
       return { version: extractVersionFromPRText(detailedPR), detailedPR };
     }
 
-    // Fetch package.json content from the specific commit
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/package.json?ref=${sha}`;
+    // Fetch ba11y/package.json content from the specific commit
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/ba11y/package.json?ref=${sha}`;
 
-    console.log(`Fetching package.json for PR #${pr.number} from ${url}`);
+    console.log(`Fetching ba11y/package.json for PR #${pr.number} from ${url}`);
 
     const response = await fetch(url, {
       headers: {
@@ -208,7 +208,7 @@ async function extractVersionAndPRDetails(
     if (!response.ok) {
       if (response.status === 404) {
         console.log(
-          `package.json not found for PR #${pr.number} at commit ${sha}, falling back to title/body`
+          `ba11y/package.json not found for PR #${pr.number} at commit ${sha}, falling back to title/body`
         );
         return { version: extractVersionFromPRText(detailedPR), detailedPR };
       }
@@ -222,7 +222,7 @@ async function extractVersionAndPRDetails(
     // Decode base64 content
     if (!fileData.content) {
       console.log(
-        `No content field in package.json response for PR #${pr.number}`
+        `No content field in ba11y/package.json response for PR #${pr.number}`
       );
       return { version: extractVersionFromPRText(detailedPR), detailedPR };
     }
@@ -243,7 +243,7 @@ async function extractVersionAndPRDetails(
       packageJson = JSON.parse(content);
     } catch (parseError) {
       console.log(
-        `Failed to parse package.json content for PR #${pr.number}:`,
+        `Failed to parse ba11y/package.json content for PR #${pr.number}:`,
         parseError
       );
       return { version: extractVersionFromPRText(detailedPR), detailedPR };
@@ -251,18 +251,18 @@ async function extractVersionAndPRDetails(
 
     if (packageJson.version) {
       console.log(
-        `Extracted version ${packageJson.version} from package.json for PR #${pr.number}`
+        `Extracted version ${packageJson.version} from ba11y/package.json for PR #${pr.number}`
       );
       return { version: packageJson.version, detailedPR };
     } else {
       console.log(
-        `No version field in package.json for PR #${pr.number}, falling back to title/body`
+        `No version field in ba11y/package.json for PR #${pr.number}, falling back to title/body`
       );
       return { version: extractVersionFromPRText(detailedPR), detailedPR };
     }
   } catch (error) {
     console.log(
-      `Error extracting version from package.json for PR #${pr.number}:`,
+      `Error extracting version from ba11y/package.json for PR #${pr.number}:`,
       error
     );
     return { version: extractVersionFromPRText(detailedPR), detailedPR };
@@ -296,7 +296,7 @@ function extractVersionFromPRText(pr: GitHubPullRequest): string {
 }
 
 /**
- * Extract version from PR by checking package.json first, then falling back to title/body
+ * Extract version from PR by checking ba11y/package.json first, then falling back to title/body
  * Also returns the detailed PR object with merged_by information
  */
 async function extractVersionFromPR(

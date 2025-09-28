@@ -9,6 +9,7 @@
     "dev:build": "tsc && vite build --mode development --sourcemap",
     "build": "tsc && vite build",
     "build:extension": "./build-extension.sh",
+    "build:zip": "./build-extension.sh zip",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
