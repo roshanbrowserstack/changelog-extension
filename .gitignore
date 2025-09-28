@@ -50,6 +50,7 @@ temp/
 *.crx
 *.pem
 key.pem
+extension.zip
 
 # Vite temporary files
 *.timestamp-*
